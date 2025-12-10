@@ -45,10 +45,11 @@ class UNet(nn.Module):
             )
             self.ups.append(DoubleConv(feature*2, feature))
         
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2) #512 -? 1024
+        self.bottleneck = DoubleConv(features[-1], features[-1]*2) #512 -> 1024
         self.finalConv = nn.Conv2d(features[0], out_channels, kernel_size=1)
     
     def forward(self, x):
+        x = x.permute(0, 3, 1, 2) #change to expected input
         skip_connections = [] #store skip connections
         for down in self.downs: #goes through down blocks
             x = down(x) #2 conv in block

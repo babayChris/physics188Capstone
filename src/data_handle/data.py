@@ -2,59 +2,77 @@ import numpy as np
 from pathlib import Path
 import json
 from torch.utils.data import Dataset
+import torch
+import sys
+
 
 class Data(Dataset):
-    def __init__(self, geometry : str = 'cylinder'):
+    def __init__(self, geometry: str = 'cylinder', rollout_steps: int = 5):
         if geometry not in ['cylinder', 'cavity', 'dam', 'tube']:
             print('enter valid geometry')
             sys.exit()
-        self.samples = []
-        self.path = Path(f'../../data/CFDbench/{geometry}')
-        self.data = self._load_data()
         
-        self.data_type_split = {'bc': 0, 'geo' : 0, 'prop' : 0}
-
-    def __len__(self):
-        return len(self.samples)
+        self.rollout_steps = rollout_steps
+        file_dir = Path(__file__).parent
+        self.path = file_dir / '../../data/CFDBench' / geometry
+        
+        self.case_data = []  
+        self.samples = [] 
+        
+        self._load_data()
 
     def _load_data(self):
-        """
-            returns [num samples, 6, 64, 64]
-        """
-        for i, type in enumerate(self.path.iterdir()):
-            #log where the types are
-            self.data_type_split[type.name] = i
-            type_path = Path(f'{self.path}/{type}')
-            for case in type_path.iterdir():
-                case_dir = f'{type_path}/{case}'
-                #check dir
-                if not os.path.exists(case_dir):
-                    print(f"Error: File not found at '{case_dir}'")
-                    return None
+        for type_dir in self.path.iterdir():
+            if not type_dir.is_dir():
+                continue
+            
+            for case_dir in type_dir.iterdir():
+                if not case_dir.is_dir():
+                    continue
                 
-                u = np.load(case_dir / 'u.npy') #(620, 64, 64)
-                v = np.load(case_dir / 'v.npy') #(620, 64, 64)
-                uv = np.stack([u, v], axis=1).astype(np.float32)
-                #stack u and v 
-                metadata = self._extract_metadata(case_dir) #(4, 64, 64)
-                for t in range(uv.shape[0]):
-                    self.samples.append((uv, metadata, t))
-    
+                u_path = case_dir / 'u.npy'
+                v_path = case_dir / 'v.npy'
+                
+                if not u_path.exists() or not v_path.exists():
+                    continue
+                
+                u = np.load(u_path)
+                v = np.load(v_path)
+                metadata = self._extract_metadata(case_dir)
+                
+                if metadata is None:
+                    continue
+                
+                # Store case data once
+                case_idx = len(self.case_data)
+                self.case_data.append((u, v, metadata))
+                
+                # Create sample indices
+                T = u.shape[0]
+                for t in range(T - self.rollout_steps):
+                    self.samples.append((case_idx, t))
+        
+        print(f"Loaded {len(self.case_data)} cases, {len(self.samples)} samples")
+
     def __getitem__(self, index):
-        """
-        for autoregressive case (predict next timestep)
-            x : (6, 64, 64)
-            y : (2, 64, 64)
-        """
-        uv, metadata, t = self.samples[index]
-        x = np.concatenate([uv[t], metadata], axis=0).astype(np.float32)
-        y = uv[t + 1]
-        return x, y
-
-
+        case_idx, t = self.samples[index]
+        u, v, metadata = self.case_data[case_idx]
+        
+        uv_t = np.stack([u[t], v[t]], axis=-1)
+        x = np.concatenate([uv_t, metadata], axis=-1).astype(np.float32)
+        
+        target_u = u[t+1 : t+1+self.rollout_steps]
+        target_v = v[t+1 : t+1+self.rollout_steps]
+        y = np.stack([target_u, target_v], axis=-1).astype(np.float32)
+        
+        return torch.from_numpy(x), torch.from_numpy(y)
+    
+    def __len__(self):
+        return len(self.samples)
+    
     def _extract_metadata(self, case_dir):
         """
-            returns arr (4, 64, 64) with v_in, density, viscocity, radius in order and broadcasted over input array size
+        Returns: [H, W, 4] channels-last
         """
         try:
             with open(case_dir / 'case.json', 'r') as f:
@@ -65,14 +83,12 @@ class Data(Dataset):
                 np.full((64, 64), raw['density']),
                 np.full((64, 64), raw['viscosity']),
                 np.full((64, 64), raw['radius']),
-            ]).astype(np.float32)
+                np.full((64, 64), raw['x_min']),
+                np.full((64, 64), raw['x_max']),
+                np.full((64, 64), raw['y_min']),
+                np.full((64, 64), raw['y_max'])
+            ], axis=-1).astype(np.float32)  # [64, 64, 8]
                 
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from the file at '{case_dir}'")
+        except (json.JSONDecodeError, KeyError, IOError) as e:
+            print(f"Error loading {case_dir}: {e}")
             return None
-        except IOError as e:
-            print(f"Error reading file: {e}")
-            return None
-
-
-        
