@@ -20,7 +20,7 @@ class Trainer:
         scheduler_params=None,
         batch_size: int = 16,
         lr: float = 1e-4,
-        val_split: float = 0.2,
+        val_split: float = 0.1,
         device: str = 'cuda' if torch.cuda.is_available() else 'mps' if torch.mps.is_available() else 'cpu',
         checkpoint_dir: str = '../../chkpts'):
         
@@ -42,32 +42,35 @@ class Trainer:
             self.scheduler = scheduler(self.optimizer, **(scheduler_params or {}))
 
         val_size = int(val_split * len(dataset))
-        train_size = len(dataset) - val_size
-        train_set, val_set = random_split(dataset, [train_size, val_size])
+        train_size = len(dataset) - val_size * 2
+        self.train_set, self.val_set, self.test_set = random_split(dataset, [train_size, val_size, val_size])
 
         #NOTE: can change num_workers to speed / slow training epoch
-        self.train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True) 
-        self.val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+        self.train_loader = DataLoader(self.train_set, batch_size=batch_size, shuffle=True, num_workers=6, pin_memory=True) 
+        self.val_loader = DataLoader(self.val_set, batch_size=batch_size, shuffle=True, num_workers=6, pin_memory=True)
         self.batches = batch_size
         self.losses = []
 
-    def train_autoregressive(self, rollout_steps = 5, clip_grad = True, show_loss = True):
+    def train_autoregressive(self, load_weights = None, rollout_steps = 5, clip_grad = True, show_loss = True):
         print('start training')
         print(f"Total epochs: {self.epochs}, Batches per epoch: {self.batches}")
-
+        
+        if load_weights:
+            self.model.load_state_dict(torch.load(load_weights, weights_only=True))
+        
         for e in range(self.epochs):
             self.model.train()
             e_loss = 0
             e_time = time.time()
 
-            for i, (x, y) in enumerate(self.train_loader):
+            for i, (x, y) in tqdm(enumerate(self.train_loader)):
                 x = x.to(self.device, non_blocking=True)
                 y = y.to(self.device, non_blocking=True)
 
                 self.optimizer.zero_grad()
 
                 curr_loss = 0.0
-                curr_state = x
+                curr_state = x.clone()
                 #iter forward in time
                 for k in range(rollout_steps):
                     pred = self.model(curr_state) # [B, H, W, 2] (v, u)
@@ -75,8 +78,10 @@ class Trainer:
                     target = y[:, k, :, :, :]
                     step_loss = self._energy_weighted_loss(pred, target)
                     curr_loss += step_loss
-                    curr_state[:, :, :, 0] = pred[:, :, :, 0] #u_x
-                    curr_state[:, :, :, 1] = pred[:, :, :, 1] #u_y
+                    curr_state = torch.cat(
+                        [pred,
+                        curr_state[:, :, :, 2:]], dim=-1
+                    )
                 loss = curr_loss / rollout_steps
 
                 #backward
@@ -90,6 +95,7 @@ class Trainer:
             if self.scheduler:
                 self.scheduler.step(avg_loss)
             epoch_time = time.time() - e_time
+            torch.save(self.model.state_dict(), f'/home/babay/programs/physics188/capstone/project/SHMS/src/training/epochs/rollout/model_weights_{e}')
             print(f"Epoch [{e+1}/{self.epochs}] completed - Avg Loss: {avg_loss:.6f}, "
             f"LR: {self.optimizer.param_groups[0]['lr']:.6f}, Time: {epoch_time:.2f}s")
         if show_loss:
