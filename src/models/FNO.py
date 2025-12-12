@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 
-
 class SpectralConv2d(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, modes1: int, modes2: int):
         super(SpectralConv2d, self).__init__()
@@ -20,6 +19,7 @@ class SpectralConv2d(nn.Module):
             self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, 
                                    dtype=torch.cfloat)
         )
+
     def forward(self, x):
         batchsize = x.shape[0]
         device = x.device        
@@ -49,8 +49,9 @@ class SpectralConv2d(nn.Module):
         
         return x_out
 
+
 class FNOBlock(nn.Module):
-    """FNO Block: Spectral Convolution + Pointwise Convolution"""
+    """FNO Block: Spectral Convolution + Pointwise Convolution + Residual"""
     def __init__(self, width: int, modes1: int, modes2: int):
         super(FNOBlock, self).__init__()
         self.conv = SpectralConv2d(width, width, modes1, modes2)
@@ -59,25 +60,26 @@ class FNOBlock(nn.Module):
         self.norm = nn.InstanceNorm2d(width)
     
     def forward(self, x):
-        return self.norm(self.activation(self.conv(x) + self.w(x)))
+        # Residual connection around the block
+        return x + self.norm(self.activation(self.conv(x) + self.w(x)))
 
 
 class FNO(nn.Module):
     """
     Fourier Neural Operator for 2D Navier-Stokes time evolution
     
-    Input channels: [u_x^t, u_y^t, u_B, ρ, μ, d, x1, x2, y1, y2, mask] = 11 channels
-    Output channels: [u_x^{t+1}, u_y^{t+1}] = 2 channels
+    Input channels: [u, v, sdf, log_rho, log_mu, vel_bc, geom_onehot x4] = 10 channels
+    Output channels: [u, v] = 2 channels
     """
     def __init__(
         self,
-        in_channels: int = 11,
+        in_channels: int = 10,
         out_channels: int = 2,
-        width: int = 64,
-        modes1: int = 16,
-        modes2: int = 16,
+        width: int = 32,
+        modes1: int = 12,
+        modes2: int = 12,
         n_layers: int = 4,
-        padding: int = 20  # Zero padding for boundary conditions
+        padding: int = 8
     ):
         super(FNO, self).__init__()
         self.padding = padding
@@ -85,7 +87,7 @@ class FNO(nn.Module):
         # Lifting layer: project to higher dimension
         self.fc0 = nn.Linear(in_channels, width)
         
-        # Fourier layers (FFT device is handled internally in SpectralConv2d)
+        # Fourier layers
         self.fno_blocks = nn.ModuleList([
             FNOBlock(width, modes1, modes2) for _ in range(n_layers)
         ])
@@ -100,19 +102,22 @@ class FNO(nn.Module):
         x: [B, H, W, in_channels]
         Returns: [B, H, W, out_channels]
         """
-        # Zero padding for boundary conditions (Option A from roadmap)
+        # Zero padding for boundary conditions
         if self.padding > 0:
-            x = torch.nn.functional.pad(x, (0, 0, self.padding, self.padding, self.padding, self.padding), mode='constant', value=0)
+            # Pad H and W dimensions: (left, right, top, bottom, front, back) for last 3 dims
+            # For [B, H, W, C]: pad W, then H, then C (but we want C=0 padding)
+            x = torch.nn.functional.pad(
+                x, 
+                (0, 0, self.padding, self.padding, self.padding, self.padding), 
+                mode='constant', 
+                value=0
+            )
         
-        # Convert to [B, in_channels, H, W] for conv layers
-        x = x.permute(0, 3, 1, 2)
-        
-        # Lifting
-        x = x.permute(0, 2, 3, 1)  # [B, H, W, in_channels]
+        # Lifting: input is [B, H, W, C], fc0 acts on last dim
         x = self.fc0(x)  # [B, H, W, width]
-        x = x.permute(0, 3, 1, 2)  # [B, width, H, W]
+        x = x.permute(0, 3, 1, 2)  # [B, width, H, W] for conv layers
         
-        # Fourier layers
+        # Fourier layers (each block has internal residual connection)
         for fno_block in self.fno_blocks:
             x = fno_block(x)
         

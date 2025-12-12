@@ -1,0 +1,1 @@
+model = FNO(in_channels=10, out_channels=2, width=32, modes1=16, modes2=16, n_layers=3, padding=9)
