@@ -5,6 +5,7 @@
   * [ ] FNO-large: All Geometries
   * [ ] U-Net: Different boundry condition for Cylinder
 * [ ] Visualize Velocity Flow: all geometries
+  * [ ] over time (time steps)
 * [ ] Risidauls for F/F-l/UN
 * [ ] Structure of different models
 * [ ] Result benchamark compare
