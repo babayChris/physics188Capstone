@@ -20,8 +20,7 @@ physics188Capstone/
 │  ├─ training/
 │  │  ├─ __pycache__/
 │  │  ├─ data.py # Data process file for U-Net
-│  │  ├─ trainer_general.py
-│  │  ├─ FNO.ipynb
+│  │  ├─ trainer_general.py # Generalized training loop class for auto-regressive and single-step training
 │  │  ├─ UNet.ipynb # notebook for U-Net model structure and training
 │  │  └─ epochs/ #Model Weights
 |  |     |UNET WEIGHTS LINK: https://drive.google.com/file/d/10-9bz0AmOyYhf6EY8mVWiEOpisVBgruZ/view (file was too large for github)
