@@ -24,6 +24,7 @@ physics188Capstone/
 │  │  ├─ FNO.ipynb
 │  │  ├─ UNet.ipynb # notebook for U-Net model structure and training
 │  │  └─ epochs/ #Model Weights
+|  |     |UNET WEIGHTS LINK: https://drive.google.com/file/d/10-9bz0AmOyYhf6EY8mVWiEOpisVBgruZ/view (file was too large for github)
 │  │     ├─ FNO_1/
 │  │     │  ├─ model.txt 
 │  │     │  ├─ FNO_no_rollout/
