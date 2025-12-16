@@ -3,15 +3,11 @@ Here we demostrate the function of each code in the following topology graph:
 ```text
 physics188Capstone/
 ├─ environment.yml
-├─ data/
-│  ├─ __pycache__/
-│  └─ code/
-│     └─ flowbench.ipynb
 ├─ src/
 │  ├─ data_handle/
 │  │  ├─ __pycache__/
-│  │  ├─ data.py 
-│  │  └─ data_final.py
+│  │  ├─ data.py #original simple dataclass (NOTE: not use in training) 
+│  │  └─ data_final.py #dataclass with lazy loading and preprocessing
 │  ├─ eval/
 │  │  ├─ __pycache__/
 │  │  ├─ inference.py #Inference code for FNO
@@ -27,7 +23,7 @@ physics188Capstone/
 │  │  ├─ trainer_general.py
 │  │  ├─ FNO.ipynb
 │  │  ├─ UNet.ipynb # notebook for U-Net model structure and training
-│  │  └─ epochs/
+│  │  └─ epochs/ #Model Weights
 │  │     ├─ FNO_1/
 │  │     │  ├─ model.txt 
 │  │     │  ├─ FNO_no_rollout/
@@ -45,7 +41,7 @@ physics188Capstone/
 │  │        └─ model_weights_0
 └─ - Visualize/
    │  └─ Visualize.ipynb
-   ├─ train.ipynb
-   └─ eval.ipynb
+   ├─ train.ipynb #FNO training notebook
+   └─ eval.ipynb #FNO visualizations
 
 ```
