@@ -43,5 +43,5 @@ physics188Capstone/
    │  └─ Visualize.ipynb
    ├─ train.ipynb #FNO training notebook
    └─ eval.ipynb #FNO visualizations
+   |_ download_data.ipynb #RUN TO DOWNLOAD DATA USED IN THIS PROJECT
 
-```
