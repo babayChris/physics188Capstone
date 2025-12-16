@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 import torch
 import sys
 
-
+#Original dataclass Not used in final training
 class Data(Dataset):
     def __init__(self, geometry: str = 'cylinder', rollout_steps: int = 5):
         if geometry not in ['cylinder', 'cavity', 'dam', 'tube']:

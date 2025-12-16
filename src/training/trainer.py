@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 import time
 import matplotlib.pyplot as plt
-from data_handle.testdata import stratified_split
+from data_handle.data_final import stratified_split
 
 
 class Trainer:
@@ -131,6 +131,9 @@ class Trainer:
         if show_loss:
             self.show_loss()
         print("Training completed!")
+
+
+
 
     def train_autoregressive(self, epochs=None, load_weights=None, rollout_steps=5, 
                              clip_grad=True, show_loss=True):

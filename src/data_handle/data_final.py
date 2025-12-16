@@ -8,13 +8,7 @@ from functools import lru_cache
 
 
 class CFDBenchDataset(Dataset):
-    """
-    Memory-efficient CFDBench dataset with lazy loading.
-    Only loads data when __getitem__ is called.
-    """
-    
     SUPPORTED_GEOMETRIES = ['cylinder', 'cavity', 'dam', 'tube']
-    
     def __init__(
         self, 
         data_root: str | Path,
@@ -38,14 +32,13 @@ class CFDBenchDataset(Dataset):
         else:
             self.geometries = geometries
         
-        # Validate geometries
         for g in self.geometries:
             if g not in self.SUPPORTED_GEOMETRIES:
                 raise ValueError(f"Unknown geometry: {g}. Supported: {self.SUPPORTED_GEOMETRIES}")
         
         # Storage - only paths and metadata, NOT actual arrays
-        self.case_info = []  # List of {path, geometry, metadata, n_timesteps}
-        self.samples = []    # List of (case_idx, timestep)
+        self.case_info = []  # {path, geometry, metadata, n_timesteps}
+        self.samples = []    # (case_idx, timestep)
         
         # Normalization stats
         self.stats = {
@@ -54,7 +47,6 @@ class CFDBenchDataset(Dataset):
             'sdf_max': 1.0,
         }
         
-        # Index all data (fast - no array loading)
         self._index_all_data()
         
         if self.normalize:
@@ -99,16 +91,13 @@ class CFDBenchDataset(Dataset):
             return
         
         try:
-            # Load only metadata
             with open(json_path, 'r') as f:
                 metadata = json.load(f)
-            
-            # Get array shape without loading full array (memory-mapped)
             u_mmap = np.load(u_path, mmap_mode='r')
             n_timesteps = u_mmap.shape[0]
             del u_mmap  # Release memory map
             
-            # Store case info (no arrays!)
+            # Store case info
             case_idx = len(self.case_info)
             self.case_info.append({
                 'case_dir': case_dir,
@@ -125,6 +114,7 @@ class CFDBenchDataset(Dataset):
         except Exception as e:
             print(f"Error indexing {case_dir}: {e}")
     
+    #NOTE: Lru_cache stores output of the function below so if the same case_idx is loaded, the ouptu is taken from the cache and the function is not run.  This optimized performance.
     @lru_cache(maxsize=32)
     def _load_case(self, case_idx: int):
         """Load case data with LRU caching."""
@@ -141,26 +131,20 @@ class CFDBenchDataset(Dataset):
     def _compute_normalization_stats_streaming(self):
         """Compute stats by streaming through data (memory-efficient)."""
         print("Computing normalization stats (streaming)...")
-        
-        # Use Welford's online algorithm for mean/std
         n = 0
         u_mean, u_m2 = 0.0, 0.0
         v_mean, v_m2 = 0.0, 0.0
         sdf_max = 0.0
-        
-        # Sample subset of cases for stats (faster)
         sample_cases = min(50, len(self.case_info))
         case_indices = np.random.choice(len(self.case_info), sample_cases, replace=False)
         
         for case_idx in case_indices:
             info = self.case_info[case_idx]
             case_dir = info['case_dir']
-            
-            # Memory-map to avoid loading full array
+
             u = np.load(case_dir / 'u.npy', mmap_mode='r')
             v = np.load(case_dir / 'v.npy', mmap_mode='r')
-            
-            # Update stats with this case
+ 
             for frame in range(0, u.shape[0], 10):  # Sample every 10th frame
                 u_flat = u[frame].flatten().astype(np.float64)
                 v_flat = v[frame].flatten().astype(np.float64)
@@ -175,8 +159,7 @@ class CFDBenchDataset(Dataset):
                     delta = val - v_mean
                     v_mean += delta / n
                     v_m2 += delta * (val - v_mean)
-            
-            # SDF max
+
             sdf = self._compute_sdf(info['geometry'], info['metadata'])
             sdf_max = max(sdf_max, np.abs(sdf).max())
             
@@ -435,7 +418,7 @@ def stratified_split(
     seed: int = 42
 ) -> tuple[Subset, Subset]:
     """
-    Stratified split by case (not sample) to prevent temporal leakage.
+    Stratified split by case (not sample)
     Ensures each geometry is represented in both splits.
     """
     rng = np.random.default_rng(seed)
@@ -468,21 +451,3 @@ def stratified_split(
             train_indices.append(i)
     
     return Subset(dataset, train_indices), Subset(dataset, val_indices)
-
-
-if __name__ == "__main__":
-    # Test
-    dataset = CFDBenchDataset(
-        data_root='./data/CFDBench',
-        geometries='all',
-        rollout_steps=1,
-        normalize=True
-    )
-    
-    print(f"Dataset size: {len(dataset)}")
-    print(f"Breakdown: {dataset.get_geometry_breakdown()}")
-    
-    if len(dataset) > 0:
-        x, y = dataset[0]
-        print(f"Input shape: {x.shape}")
-        print(f"Target shape: {y.shape}")
